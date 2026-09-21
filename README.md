@@ -22,7 +22,7 @@ Built for the *Offline-First Task Board* assignment.
 open Tackle.xcodeproj
 ```
 
-Resolve packages (first time is slow), pick any iOS 17+ simulator, run. Tests: **⌘U**.
+Resolve packages (first time is slow), pick any iOS 18+ simulator, run. Tests: **⌘U**.
 
 To see the offline behaviour: turn on airplane mode, create and edit tasks, turn it off, watch
 them settle.
@@ -37,6 +37,9 @@ them settle.
 - Local persistence across close, relaunch and connectivity loss
 - Syncs with Firebase Firestore — outbound push queue, inbound real-time listener
 - Per-task indication of whether a change has synced
+- Light and dark appearance, each with its own palette rather than one set of colours inverted
+- Portrait and landscape, on iPhone and iPad — the board is a single adaptive list with no fixed
+  widths, so it reflows rather than being letterboxed
 
 ---
 
@@ -72,18 +75,28 @@ create, update and delete are the same remote call: push this task's current sta
 a `deleted: true` flag. That removes operation kinds, stored payloads, coalescing rules, replay
 ordering and duplicate-create risk in one go. Editing a task five times offline leaves one row.
 
-**A status change always lands at the top of its new section.** Dropping a task into the bottom
-of a long backlog hides it at the moment the user most needs to see where it went. The rule lives
-in `TaskRepository`, not at the three call sites that can trigger it — drag, the swipe action and
-the editor's status picker — so they cannot drift apart. Position is only ever chosen by dragging
-a row within a section. New tasks are the one exception and append to the bottom, because creating
-several in a row is building a queue.
+**A status change lands at the top of its new section — unless the user named a position.**
+Sending a task to the bottom of a long backlog hides it at the moment the user most needs to see
+where it went, so the `Move` swipe action and the editor's status picker both put it on top. That
+rule lives in `TaskRepository`, not at its call sites, so they cannot drift apart. A drag is the
+exception in the other direction: it *is* a position, so it is honoured exactly, and crossing a
+section is the same write as reordering within one. New tasks append to the bottom, because
+creating several in a row is building a queue.
 
-**Cross-section drag is `.draggable`/`.dropDestination`, not `.onMove`.** `.onMove` is scoped to a
-single `ForEach` and cannot move a row into another section. Keeping the three `Section`s and
-adding drop targets preserves the native inset-grouped look and leaves edit-mode reordering
-untouched. The dragged payload is the task's id alone, never a copy of the task, because the row
-can change or sync in from elsewhere while the drag is in the air.
+**The board is one flat `ForEach` of headings and tasks, moved with `.onMove`.** The obvious
+structure — a `Section` per stage — cannot support cross-section drag at all: a `List` treats a
+drag as a reorder session owned by the `ForEach` it began in, so a drop into a different section
+is never delivered. Neither is the modern alternative; `.draggable`/`.dropDestination` on a row
+inside a `List` never receives a drop, which instrumenting every handler confirmed — the lift
+fired every time and no drop handler ever did. Flattening puts every row in one session, at the
+cost of owning the index arithmetic that maps a flat drop position back onto a stage. The first
+heading sits outside the `ForEach` so nothing can be dropped above it.
+
+**A drag is landed locally before the write is acknowledged.** `onMove` returns control expecting
+the data to have already changed, but the write is a round trip through Core Data — so the list
+reverts to the old arrangement and re-animates when the stream catches up, on every single move.
+The view model resolves the same neighbours and the same sort index the repository will, so the
+stream's answer agrees with what is already on screen and nothing moves twice.
 
 **Sync state is derived, not stored.** A task is waiting if the outbox references it. Storing the
 flag invites a real bug: the engine marks a task syncing, awaits the network, the user edits during
@@ -116,17 +129,25 @@ Race conditions and their mitigations are tabulated in [`ARCHITECTURE.md §7`](A
 
 ## Testing
 
-Swift Testing. Sync suites are `@Suite(.serialized)` because Swift Testing parallelises by default
-and these share an in-memory store.
+Swift Testing — 24 tests in four suites, run with **⌘U**.
 
-Coverage is targeted at the sync layer, where the design could actually be wrong: sort-index maths,
-the merge rule, two concurrent sync passes pushing each task exactly once, an edit arriving during
-an in-flight push, and a failed push leaving its outbox row intact.
+Coverage is aimed at the positioning logic, because that is where this design can actually be
+wrong and where being wrong is silent rather than loud.
 
-`FirestoreStore` itself isn't unit-tested — it's thin mapping code, verified by running the app
-against a real project.
+| Suite | What it pins down |
+|---|---|
+| `SortIndex` | The fractional index maths, including that repeated splits between one pair stay ordered |
+| `Reordering` | The off-by-one in `onMove`, which numbers the drop against the list that still contains the row |
+| `Dragging across stages` | Translating a flat drop index back into a stage and a pair of neighbours |
+| `Status changes` | The top-landing rule, including empty sections, soft-deleted rows and no-op changes |
 
-<!-- FILL IN: total test count -->
+Everything runs against in-memory fakes of the store and repository protocols, so no simulator
+state and no Firebase project is involved.
+
+**The sync layer has no automated tests yet.** The push loop, the merge rule and the behaviour of
+two concurrent passes were verified by hand against a real Firestore project — airplane mode,
+force-quit mid-push, reinstall, and two clients on one board — rather than in code.
+`FirestoreStore` is thin mapping code and is checked the same way.
 
 ---
 
@@ -143,29 +164,33 @@ against a real project.
   request and then read, overwrite or delete any task, without running the app. The rules stop
   unauthenticated scrapers and nothing more. That is an accepted consequence of a shared board
   with no accounts; a real deployment would need per-user scoping, App Check, or both.
-- **`FirestoreStore` has no automated tests.**
+- **The sync layer has no automated tests**, including `FirestoreStore`. It is verified by hand
+  against a real project.
 
 ---
 
 ## What I'd add with more time
 
-1. Field-level conflict resolution rather than last-write-wins.
-2. Sort-index renormalisation.
-3. Background sync via `BGTaskScheduler`.
-4. Search, filtering, and undo for deletes.
-5. Real sign-in so a board survives reinstalling.
+1. **Real sign-in**, so each person gets their own board instead of the single shared one, and a
+   board survives reinstalling.
+2. **Search and filtering** across titles and descriptions.
+3. **Priority as a colour**, so P0, P1 and P2 are readable at a glance without opening a task.
+4. **Folders**, so tasks can be grouped by project rather than living in one flat board.
+5. **Background sync** via `BGTaskScheduler`, so a queued change can drain without the app being
+   opened.
+6. Automated tests for the sync layer, which is currently verified by hand.
+7. Field-level conflict resolution rather than last-write-wins, and sort-index renormalisation.
 
 ---
 
 ## Assumptions
 
-- No specific backend was named in the brief, so I chose Firebase Firestore.
 - Task order is part of the synced model, not a local-only concern.
 - No user accounts were asked for, so there is one shared board and anonymous auth is used purely
   to keep the database from being open to anyone.
-- The board is a native sectioned list rather than a horizontal Kanban. Tasks still move between
-  sections by dragging; they also move by swipe and from the editor, and all three land in the
-  same place.
+- The board is a native vertical list rather than a horizontal Kanban. Tasks move between sections
+  by dragging, by swipe, or from the editor; a drag keeps the position it was dropped at, and the
+  other two land the task on top.
 - `GoogleService-Info.plist` belongs in the repo, since the brief requires the project to build
   without undisclosed configuration. The Firestore rules require an authenticated caller and are
   included in [`FIREBASE.md §5`](FIREBASE.md); their limits are spelled out under Known

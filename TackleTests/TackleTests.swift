@@ -173,8 +173,8 @@ struct ReorderTests {
 struct FlatDragTests {
 
     /// Three To Do tasks and one In Progress task, which lays out as:
-    /// `0` To Do heading, `1...3` its tasks, `4` In Progress heading, `5` its task,
-    /// `6` Done heading.
+    /// `0...2` the To Do tasks, `3` In Progress heading, `4` its task, `5` Done heading.
+    /// To Do has no heading row — the board pins it above the list.
     private func board() -> (BoardViewModel, RecordingRepository, [TaskItem]) {
         let tasks = [
             TaskItem(title: "a", status: .todo, sortIndex: 1024),
@@ -209,7 +209,7 @@ struct FlatDragTests {
         let (viewModel, repository, tasks) = board()
         await viewModel.observe()
         // Above the one task already in In Progress.
-        viewModel.move(from: IndexSet(integer: 1), to: 5)
+        viewModel.move(from: IndexSet(integer: 0), to: 4)
 
         for _ in 0..<100 where repository.moved == nil {
             try? await Task.sleep(for: .milliseconds(10))
@@ -227,7 +227,7 @@ struct FlatDragTests {
     func belowARowInAnotherStage() async {
         let (viewModel, repository, tasks) = board()
         await viewModel.observe()
-        viewModel.move(from: IndexSet(integer: 1), to: 6)
+        viewModel.move(from: IndexSet(integer: 0), to: 5)
 
         for _ in 0..<100 where repository.moved == nil {
             try? await Task.sleep(for: .milliseconds(10))
@@ -240,7 +240,7 @@ struct FlatDragTests {
 
     @Test("Dropping past the last row lands in the final stage")
     func intoTrailingEmptyStage() async {
-        let repository = await drag(from: 1, to: 7)
+        let repository = await drag(from: 0, to: 6)
 
         #expect(repository.moved?.status == .done)
         #expect(repository.moved?.above == nil)
@@ -251,7 +251,7 @@ struct FlatDragTests {
     func withinOwnStage() async {
         let (viewModel, repository, tasks) = board()
         await viewModel.observe()
-        viewModel.move(from: IndexSet(integer: 1), to: 3)
+        viewModel.move(from: IndexSet(integer: 0), to: 2)
 
         for _ in 0..<100 where repository.moved == nil {
             try? await Task.sleep(for: .milliseconds(10))
@@ -263,11 +263,28 @@ struct FlatDragTests {
         #expect(repository.moved?.below == tasks[2].id)
     }
 
-    @Test("Dropping above the first heading stays in the first stage")
+    /// The first stage's heading is pinned outside the list, so index zero is the row
+    /// directly under it rather than anything above it.
+    @Test("Dragging from another stage to the very top lands under the first heading")
+    func aboveTheFirstHeading() async {
+        let (viewModel, repository, tasks) = board()
+        await viewModel.observe()
+        viewModel.move(from: IndexSet(integer: 4), to: 0)
+
+        for _ in 0..<100 where repository.moved == nil {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
+
+        #expect(repository.moved?.status == .todo)
+        #expect(repository.moved?.above == nil)
+        #expect(repository.moved?.below == tasks[0].id)
+    }
+
+    @Test("Dragging to the very top stays in the first stage")
     func aboveEverything() async {
         let (viewModel, repository, tasks) = board()
         await viewModel.observe()
-        viewModel.move(from: IndexSet(integer: 3), to: 0)
+        viewModel.move(from: IndexSet(integer: 2), to: 0)
 
         for _ in 0..<100 where repository.moved == nil {
             try? await Task.sleep(for: .milliseconds(10))
@@ -281,7 +298,7 @@ struct FlatDragTests {
     func headingIsInert() async {
         let (viewModel, repository, _) = board()
         await viewModel.observe()
-        viewModel.move(from: IndexSet(integer: 4), to: 1)
+        viewModel.move(from: IndexSet(integer: 3), to: 1)
 
         try? await Task.sleep(for: .milliseconds(50))
 

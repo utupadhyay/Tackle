@@ -73,9 +73,13 @@ final class BoardViewModel {
     /// A drag inside a `List` is a reorder session owned by the enclosing `ForEach`, so with
     /// one `ForEach` per section a drop into a different section is never delivered. Flattening
     /// puts every row in the same session, which is what makes dragging across stages work.
+    ///
+    /// The first stage's heading is absent: the board pins it above the `ForEach` so nothing
+    /// can be dropped above it. Everything here is draggable, and everything draggable is here.
     var rows: [BoardRow] {
         TaskStatus.allCases.flatMap { status in
-            [BoardRow.header(status)] + tasks(in: status).map(BoardRow.task)
+            let tasks = tasks(in: status).map(BoardRow.task)
+            return status == TaskStatus.allCases[0] ? tasks : [BoardRow.header(status)] + tasks
         }
     }
 
@@ -127,7 +131,7 @@ final class BoardViewModel {
         let destination = min(max(destination, 0), rows.count)
         let target = stage(at: destination, in: rows)
         let section = tasks(in: target)
-        let start = headerIndex(of: target, in: rows) + 1
+        let start = sectionStart(of: target, in: rows)
         let localDestination = min(max(destination - start, 0), section.count)
 
         guard target != moved.status else {
@@ -136,14 +140,32 @@ final class BoardViewModel {
 
         // No off-by-one on this path: the row is arriving from another section, so it isn't
         // among the neighbours being counted.
-        perform {
-            try await self.repository.move(
-                moved.id,
-                to: target,
-                above: localDestination > 0 ? section[localDestination - 1].id : nil,
-                below: localDestination < section.count ? section[localDestination].id : nil
+        place(
+            moved.id,
+            in: target,
+            above: localDestination > 0 ? section[localDestination - 1].id : nil,
+            below: localDestination < section.count ? section[localDestination].id : nil
+        )
+    }
+
+    /// Writes the move, and lands it locally first.
+    ///
+    /// `onMove` hands the list back expecting the data to have already changed, but the write
+    /// is a round trip through Core Data. Without the local landing the List reverts to the
+    /// old arrangement and re-animates when the stream catches up, which is the flicker.
+    /// This resolves the same neighbours the repository will, so the stream's answer matches
+    /// what is already on screen and nothing moves twice.
+    private func place(_ id: UUID, in status: TaskStatus, above: UUID?, below: UUID?) {
+        if let index = tasks.firstIndex(where: { $0.id == id }) {
+            tasks[index].status = status
+            tasks[index].sortIndex = SortIndex.between(
+                above: above.flatMap { neighbour in tasks.first { $0.id == neighbour }?.sortIndex },
+                below: below.flatMap { neighbour in tasks.first { $0.id == neighbour }?.sortIndex }
             )
+            tasks.sort(by: TaskItem.boardOrder)
         }
+
+        perform { try await self.repository.move(id, to: status, above: above, below: below) }
     }
 
     /// The stage owning a flat insertion point: the nearest heading at or above it.
@@ -154,11 +176,14 @@ final class BoardViewModel {
         return TaskStatus.allCases[0]
     }
 
-    private func headerIndex(of status: TaskStatus, in rows: [BoardRow]) -> Int {
-        rows.firstIndex {
+    /// Where a stage's tasks begin. The first stage has no heading row of its own, so its
+    /// tasks start at zero.
+    private func sectionStart(of status: TaskStatus, in rows: [BoardRow]) -> Int {
+        let header = rows.firstIndex {
             guard case .header(let candidate) = $0 else { return false }
             return candidate == status
-        } ?? 0
+        }
+        return header.map { $0 + 1 } ?? 0
     }
 
     /// SwiftUI computes `destination` before the row is removed, so it is off by one
@@ -174,7 +199,7 @@ final class BoardViewModel {
         let above = insertAt > 0 ? reordered[insertAt - 1].id : nil
         let below = insertAt < reordered.count - 1 ? reordered[insertAt + 1].id : nil
 
-        perform { try await self.repository.move(moved.id, to: moved.status, above: above, below: below) }
+        place(moved.id, in: moved.status, above: above, below: below)
     }
 
     private func perform(_ work: @escaping () async throws -> Void) {

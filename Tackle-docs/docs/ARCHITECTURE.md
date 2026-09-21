@@ -148,6 +148,7 @@ protocol TaskRepositoryProtocol: Sendable {
     func update(_ task: TaskItem) async throws
     func delete(_ id: UUID) async throws
     func move(_ id: UUID, to status: TaskStatus, above: UUID?, below: UUID?) async throws
+    func changeStatus(_ id: UUID, to status: TaskStatus) async throws   // lands on top
     func sync() async                            // never throws to the UI
 }
 

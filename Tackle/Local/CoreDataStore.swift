@@ -43,7 +43,7 @@ nonisolated final class CoreDataStore: LocalStoreProtocol {
             let pending = try Self.pendingTaskIds(in: writer)
             return try writer.fetch(request)
                 .compactMap { Self.item(from: $0, pendingIds: pending) }
-                .sorted(by: Self.boardOrder)
+                .sorted(by: TaskItem.boardOrder)
         }
     }
 
@@ -205,11 +205,4 @@ nonisolated final class CoreDataStore: LocalStoreProtocol {
         return PendingPush(id: id, taskId: taskId, queuedAt: queuedAt, pushedUpdatedAt: row.pushedUpdatedAt)
     }
 
-    private static func boardOrder(_ lhs: TaskItem, _ rhs: TaskItem) -> Bool {
-        guard lhs.status == rhs.status else {
-            return TaskStatus.allCases.firstIndex(of: lhs.status)!
-                < TaskStatus.allCases.firstIndex(of: rhs.status)!
-        }
-        return lhs.sortIndex < rhs.sortIndex
-    }
 }

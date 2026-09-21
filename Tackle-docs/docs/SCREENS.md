@@ -219,10 +219,21 @@ designed, not degraded.**
 
 ### 7.3 Edit mode and row actions
 
-- **Reorder within a section:** standard edit-mode grabber (`≡`), `.onMove`.
-- **Move between sections:** three ways in, all landing in the same place (§7.4) — long-press and
-  drag the row onto another section, the `Move` swipe action, or the status picker in the editor.
-  Drag is `.draggable`/`.dropDestination`, not `.onMove`, which cannot cross a `ForEach`.
+- **Reorder within a section:** long-press and drag, or the edit-mode grabber (`≡`). Both are
+  `.onMove`.
+- **Move between sections:** three ways in — long-press and drag the row under another heading,
+  the `Move` swipe action, or the status picker in the editor. Where each one lands is §7.4.
+- **The board is one flat list, not three `Section`s.** A `List` treats a drag as a reorder owned
+  by the `ForEach` it began in, so with a `ForEach` per section a drop into another section is
+  never delivered — and `.draggable`/`.dropDestination` on a row inside a `List` never receives
+  the drop at all. One `ForEach` over headings *and* tasks puts every row in the same session,
+  which is what makes crossing a section possible.
+- **The first heading is pinned above the `ForEach`.** Inside it, the `List` offers an insertion
+  slot above it and shoves it down mid-drag, then has to undo that when the task lands underneath.
+  The other headings stay inside and stay movable, because a `List` offers no insertion slot
+  beside a pinned row — pinning them would put the top of every section out of reach. Dragging a
+  heading is ignored when the move is resolved, and while editing they are pinned so they don't
+  offer a grabber they can't honour.
 - **Swipe actions:** `Move` (tint) and `Delete` (danger). The only two places those colours appear
   as fills.
 - **No context menu.** Long press belongs to the drag. `Move` and `Delete` are both on the swipes,
@@ -231,15 +242,21 @@ designed, not degraded.**
 
 ### 7.4 Where a task lands when its status changes
 
-A status change always puts the task at the **top** of the section it arrives in, whichever of the
-three routes was used. The reason is visibility: a task dropped into the bottom of a fifty-item
-backlog has effectively vanished. Only an explicit drag within a section sets a position.
+**A drag names a position, so the task lands exactly where it was dropped** — between the two rows
+it was released between, in whichever section that is. Crossing a section and reordering within
+one are the same gesture and the same write.
 
-New tasks are the exception and append to the bottom, because creating several in a row is
+**The `Move` swipe action and the editor's status picker have no position to go on, so they land
+the task at the top** of the section it arrives in. The reason is visibility: a task sent to the
+bottom of a fifty-item backlog has effectively vanished. That rule lives in `TaskRepository`, not
+at the call sites, so the two routes cannot drift apart.
+
+New tasks are the other exception and append to the bottom, because creating several in a row is
 building a queue, and each new one belongs after the last.
 
-While a row is held over a section, that section's rows tint to show where it will land.
-Dropping a row back on its own section does nothing; reordering is edit mode's job.
+Nothing can be dropped above the first heading; a drag aimed there lands as the first row beneath
+it. A drag is landed locally the moment it is released, before the write is acknowledged —
+otherwise the list snaps back to the old arrangement and re-animates when Core Data answers.
 
 ### 7.5 Task editor
 
@@ -332,6 +349,7 @@ Fixing copy late is how inconsistency ships. These are final.
 | Floating button a11y label | New Task |
 | VoiceOver, unsynced row | Waiting to sync |
 | Delete confirmation | Delete Task / Cancel |
+| Move confirmation | Move Task / Move to `{section}` / Cancel |
 | Title placeholder | What needs doing? |
 | Description placeholder | Add detail (optional) |
 

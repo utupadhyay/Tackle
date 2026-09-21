@@ -43,4 +43,15 @@ nonisolated struct TaskItem: Identifiable, Hashable, Sendable {
         self.isDeleted = isDeleted
         self.isSynced = isSynced
     }
+
+    /// The order the board reads in: stages top to bottom, and within a stage by sort index.
+    /// Reads leave the store in this order, so anything rearranging tasks in memory has to
+    /// reproduce it or the list and the store disagree.
+    static func boardOrder(_ lhs: TaskItem, _ rhs: TaskItem) -> Bool {
+        guard lhs.status == rhs.status else {
+            return TaskStatus.allCases.firstIndex(of: lhs.status)!
+                < TaskStatus.allCases.firstIndex(of: rhs.status)!
+        }
+        return lhs.sortIndex < rhs.sortIndex
+    }
 }
