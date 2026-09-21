@@ -12,7 +12,7 @@ Built for the *Offline-First Task Board* assignment.
 | | |
 |---|---|
 | **Xcode** | 16 or later (tests use Swift Testing) |
-| **iOS** | 17.0+ |
+| **iOS** | 18.0+ (`Synchronization.Mutex`) |
 | **Dependencies** | Firebase iOS SDK — `FirebaseFirestore` and `FirebaseAuth` only |
 | **Configuration** | None. `GoogleService-Info.plist` is committed; anonymous auth signs in silently |
 
@@ -32,7 +32,7 @@ them settle.
 ## What it does
 
 - Board with To Do, In Progress and Done sections
-- Create, edit, delete, move between sections, reorder
+- Create, edit, delete, reorder, and drag between sections in any direction
 - Full use of the app with no network
 - Local persistence across close, relaunch and connectivity loss
 - Syncs with Firebase Firestore — outbound push queue, inbound real-time listener
@@ -71,6 +71,19 @@ lying. One offline system, and it's ours.
 create, update and delete are the same remote call: push this task's current state, with delete as
 a `deleted: true` flag. That removes operation kinds, stored payloads, coalescing rules, replay
 ordering and duplicate-create risk in one go. Editing a task five times offline leaves one row.
+
+**A status change always lands at the top of its new section.** Dropping a task into the bottom
+of a long backlog hides it at the moment the user most needs to see where it went. The rule lives
+in `TaskRepository`, not at the three call sites that can trigger it — drag, the swipe action and
+the editor's status picker — so they cannot drift apart. Position is only ever chosen by dragging
+a row within a section. New tasks are the one exception and append to the bottom, because creating
+several in a row is building a queue.
+
+**Cross-section drag is `.draggable`/`.dropDestination`, not `.onMove`.** `.onMove` is scoped to a
+single `ForEach` and cannot move a row into another section. Keeping the three `Section`s and
+adding drop targets preserves the native inset-grouped look and leaves edit-mode reordering
+untouched. The dragged payload is the task's id alone, never a copy of the task, because the row
+can change or sync in from elsewhere while the drag is in the air.
 
 **Sync state is derived, not stored.** A task is waiting if the outbox references it. Storing the
 flag invites a real bug: the engine marks a task syncing, awaits the network, the user edits during
@@ -150,8 +163,9 @@ against a real project.
 - Task order is part of the synced model, not a local-only concern.
 - No user accounts were asked for, so there is one shared board and anonymous auth is used purely
   to keep the database from being open to anyone.
-- The board is a native sectioned list; moving between sections is an explicit action rather than a
-  cross-column drag.
+- The board is a native sectioned list rather than a horizontal Kanban. Tasks still move between
+  sections by dragging; they also move by swipe and from the editor, and all three land in the
+  same place.
 - `GoogleService-Info.plist` belongs in the repo, since the brief requires the project to build
   without undisclosed configuration. The Firestore rules require an authenticated caller and are
   included in [`FIREBASE.md §5`](FIREBASE.md); their limits are spelled out under Known

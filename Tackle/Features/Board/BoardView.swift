@@ -66,41 +66,55 @@ struct BoardView: View {
             emptyState
         } else {
             List {
-                ForEach(TaskStatus.allCases, id: \.self) { status in
-                    section(for: status)
+                // One flat ForEach, not a Section per stage: a List confines a drag to the
+                // ForEach it started in, so sections would make cross-stage drops impossible.
+                ForEach(viewModel.rows) { row in
+                    switch row {
+                    case .header(let status):
+                        header(for: status)
+                    case .task(let task):
+                        taskRow(task)
+                    }
                 }
+                .onMove { viewModel.move(from: $0, to: $1) }
             }
-            .listStyle(.insetGrouped)
+            .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(Theme.canvas)
         }
     }
 
-    private func section(for status: TaskStatus) -> some View {
-        let tasks = viewModel.tasks(in: status)
+    private func header(for status: TaskStatus) -> some View {
+        SectionHeader(status: status, count: viewModel.tasks(in: status).count)
+            .padding(.top, status == TaskStatus.allCases[0] ? 0 : 16)
+            .padding(.bottom, 4)
+            .listRowBackground(Theme.canvas)
+            .listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: 0, leading: 32, bottom: 0, trailing: 32))
+            .deleteDisabled(true)
+    }
 
-        return Section {
-            ForEach(tasks) { task in
-                TaskRow(task: task)
-                    .listRowBackground(Theme.card)
-                    .onTapGesture { viewModel.edit(task) }
-                    .swipeActions(edge: .trailing) {
-                        Button("Delete") { viewModel.pendingDeletion = task }
-                            .tint(Theme.destructive)
-                    }
-                    .swipeActions(edge: .leading) {
-                        Button("Move") { viewModel.taskBeingMoved = task }
-                            .tint(Theme.tint)
-                    }
-                    .contextMenu {
-                        Button("Move") { viewModel.taskBeingMoved = task }
-                        Button("Delete", role: .destructive) { viewModel.pendingDeletion = task }
-                    }
+    private func taskRow(_ task: TaskItem) -> some View {
+        TaskRow(task: task)
+            // The card is drawn as the row background rather than inside the row so the
+            // swipe actions and drag preview follow its rounded edge.
+            .listRowBackground(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Theme.card)
+                    .padding(.vertical, 3)
+                    .padding(.horizontal, 16)
+            )
+            .listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: 3, leading: 32, bottom: 3, trailing: 32))
+            .onTapGesture { viewModel.edit(task) }
+            .swipeActions(edge: .trailing) {
+                Button("Delete") { viewModel.pendingDeletion = task }
+                    .tint(Theme.destructive)
             }
-            .onMove { viewModel.move(in: tasks, from: $0, to: $1) }
-        } header: {
-            SectionHeader(status: status, count: tasks.count)
-        }
+            .swipeActions(edge: .leading) {
+                Button("Move") { viewModel.taskBeingMoved = task }
+                    .tint(Theme.tint)
+            }
     }
 
     @ViewBuilder

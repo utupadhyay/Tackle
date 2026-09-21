@@ -23,7 +23,8 @@ nonisolated final class TaskRepository: TaskRepositoryProtocol {
 
     var tasks: AsyncStream<[TaskItem]> { local.tasks }
 
-    /// New tasks append to the bottom of their section.
+    /// New tasks append to the bottom — creating several in a row is building a queue, so each
+    /// belongs after the last. This is the one case that doesn't go to the top.
     func create(title: String, details: String, status: TaskStatus) async throws {
         let bottom = try await local.fetchAll()
             .filter { $0.status == status }
@@ -41,9 +42,17 @@ nonisolated final class TaskRepository: TaskRepositoryProtocol {
         pushInBackground()
     }
 
+    /// A status change here — the editor's picker is the only way in — follows the same rule
+    /// as everywhere else, so the editor doesn't need to know the rule or the target section.
     func update(_ task: TaskItem) async throws {
         var updated = task
         updated.updatedAt = .now
+
+        let stored = try await local.task(id: task.id)
+        if let stored, stored.status != task.status {
+            updated.sortIndex = topIndex(of: task.status, in: try await local.fetchAll())
+        }
+
         try await local.save(updated)
         pushInBackground()
     }
@@ -52,6 +61,19 @@ nonisolated final class TaskRepository: TaskRepositoryProtocol {
     func delete(_ id: UUID) async throws {
         guard var task = try await local.task(id: id) else { return }
         task.isDeleted = true
+        task.updatedAt = .now
+        try await local.save(task)
+        pushInBackground()
+    }
+
+    /// Changing status sends the task to the top of the section it lands in, so the user can
+    /// see where it went instead of hunting for it in a long list. Position is only ever
+    /// chosen by the user dragging a row, which goes through `move`.
+    func changeStatus(_ id: UUID, to status: TaskStatus) async throws {
+        guard var task = try await local.task(id: id), task.status != status else { return }
+
+        task.status = status
+        task.sortIndex = topIndex(of: status, in: try await local.fetchAll())
         task.updatedAt = .now
         try await local.save(task)
         pushInBackground()
@@ -75,6 +97,15 @@ nonisolated final class TaskRepository: TaskRepositoryProtocol {
     /// Never throws to the UI — a failed push just leaves its outbox row in place.
     func sync() async {
         await sync.withLock { $0 }?.pushPending()
+    }
+
+    /// One gap above whatever currently sits highest. Top insertion always subtracts, so it
+    /// can't exhaust precision the way repeated midpoint splits can.
+    private func topIndex(of status: TaskStatus, in all: [TaskItem]) -> Double {
+        SortIndex.between(
+            above: nil,
+            below: all.filter { $0.status == status }.map(\.sortIndex).min()
+        )
     }
 
     private func pushInBackground() {

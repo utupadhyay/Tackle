@@ -7,6 +7,19 @@
 
 import Foundation
 
+/// One line of the board: either a stage heading or a task sitting under it.
+enum BoardRow: Identifiable {
+    case header(TaskStatus)
+    case task(TaskItem)
+
+    var id: String {
+        switch self {
+        case .header(let status): "header-\(status.rawValue)"
+        case .task(let task): "task-\(task.id)"
+        }
+    }
+}
+
 @Observable
 final class BoardViewModel {
     private(set) var tasks: [TaskItem] = []
@@ -55,6 +68,17 @@ final class BoardViewModel {
         tasks.filter { $0.status == status }
     }
 
+    /// Every stage heading followed by its tasks, as one flat list.
+    ///
+    /// A drag inside a `List` is a reorder session owned by the enclosing `ForEach`, so with
+    /// one `ForEach` per section a drop into a different section is never delivered. Flattening
+    /// puts every row in the same session, which is what makes dragging across stages work.
+    var rows: [BoardRow] {
+        TaskStatus.allCases.flatMap { status in
+            [BoardRow.header(status)] + tasks(in: status).map(BoardRow.task)
+        }
+    }
+
     /// Core Data answers immediately, so there is no loading state to model here.
     func observe() async {
         for await tasks in repository.tasks {
@@ -83,20 +107,68 @@ final class BoardViewModel {
         TaskStatus.allCases.filter { $0 != task.status }
     }
 
-    /// Moving between sections lands the task at the bottom of the target section.
+    /// Picking a section from the Move dialog has no position to go on, so it lands at the top
+    /// of the target. The repository owns that rule.
     func move(_ task: TaskItem, to status: TaskStatus) {
-        let above = tasks(in: status).last?.id
-        perform { try await self.repository.move(task.id, to: status, above: above, below: nil) }
+        perform { try await self.repository.changeStatus(task.id, to: status) }
+    }
+
+    /// A row dragged anywhere on the board, whether it stays under its own heading or crosses
+    /// to another. A drag names a position, so it is honoured either way — the top-landing
+    /// rule is for the Move dialog and the editor, which don't have one.
+    func move(from source: IndexSet, to destination: Int) {
+        let rows = rows
+        // The indices describe the list as it was drawn. A pull from Firestore can land
+        // mid-drag and replace the rows underneath them, so they are checked, not trusted.
+        guard let fromIndex = source.first, rows.indices.contains(fromIndex),
+              case .task(let moved) = rows[fromIndex]
+        else { return }
+
+        let destination = min(max(destination, 0), rows.count)
+        let target = stage(at: destination, in: rows)
+        let section = tasks(in: target)
+        let start = headerIndex(of: target, in: rows) + 1
+        let localDestination = min(max(destination - start, 0), section.count)
+
+        guard target != moved.status else {
+            return move(in: section, from: IndexSet(integer: fromIndex - start), to: localDestination)
+        }
+
+        // No off-by-one on this path: the row is arriving from another section, so it isn't
+        // among the neighbours being counted.
+        perform {
+            try await self.repository.move(
+                moved.id,
+                to: target,
+                above: localDestination > 0 ? section[localDestination - 1].id : nil,
+                below: localDestination < section.count ? section[localDestination].id : nil
+            )
+        }
+    }
+
+    /// The stage owning a flat insertion point: the nearest heading at or above it.
+    private func stage(at destination: Int, in rows: [BoardRow]) -> TaskStatus {
+        for row in rows[..<min(destination, rows.count)].reversed() {
+            if case .header(let status) = row { return status }
+        }
+        return TaskStatus.allCases[0]
+    }
+
+    private func headerIndex(of status: TaskStatus, in rows: [BoardRow]) -> Int {
+        rows.firstIndex {
+            guard case .header(let candidate) = $0 else { return false }
+            return candidate == status
+        } ?? 0
     }
 
     /// SwiftUI computes `destination` before the row is removed, so it is off by one
     /// when a task moves downward.
     func move(in section: [TaskItem], from source: IndexSet, to destination: Int) {
-        guard let fromIndex = source.first else { return }
+        guard let fromIndex = source.first, section.indices.contains(fromIndex) else { return }
 
         var reordered = section
         let moved = reordered.remove(at: fromIndex)
-        let insertAt = destination > fromIndex ? destination - 1 : destination
+        let insertAt = min(max(destination > fromIndex ? destination - 1 : destination, 0), reordered.count)
         reordered.insert(moved, at: insertAt)
 
         let above = insertAt > 0 ? reordered[insertAt - 1].id : nil

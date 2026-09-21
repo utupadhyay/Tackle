@@ -44,8 +44,8 @@ final class TaskEditorViewModel {
                 if var task = existing {
                     task.title = title
                     task.details = details
-                    // Changing status here keeps the task's sort index, so it keeps its
-                    // relative position in the section it lands in.
+                    // If this changes the status, the repository repositions the task to the
+                    // top of its new section, the same as a drag or the swipe action would.
                     task.status = status
                     try await repository.update(task)
                 } else {

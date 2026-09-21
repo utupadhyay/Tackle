@@ -15,6 +15,9 @@ nonisolated protocol TaskRepositoryProtocol: Sendable {
     func create(title: String, details: String, status: TaskStatus) async throws
     func update(_ task: TaskItem) async throws
     func delete(_ id: UUID) async throws
+    /// Sends the task to the top of its new section. Use this for every status change;
+    /// `move` is only for a position the user chose by hand.
+    func changeStatus(_ id: UUID, to status: TaskStatus) async throws
     func move(_ id: UUID, to status: TaskStatus, above: UUID?, below: UUID?) async throws
     /// Never throws to the UI.
     func sync() async

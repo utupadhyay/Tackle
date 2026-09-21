@@ -220,12 +220,28 @@ designed, not degraded.**
 ### 7.3 Edit mode and row actions
 
 - **Reorder within a section:** standard edit-mode grabber (`≡`), `.onMove`.
-- **Move between sections:** explicit action — swipe, or the status picker in the editor. Not a
-  cross-section drag; that is hours of SwiftUI work the brief does not ask for.
+- **Move between sections:** three ways in, all landing in the same place (§7.4) — long-press and
+  drag the row onto another section, the `Move` swipe action, or the status picker in the editor.
+  Drag is `.draggable`/`.dropDestination`, not `.onMove`, which cannot cross a `ForEach`.
 - **Swipe actions:** `Move` (tint) and `Delete` (danger). The only two places those colours appear
   as fills.
+- **No context menu.** Long press belongs to the drag. `Move` and `Delete` are both on the swipes,
+  so nothing is lost — and unlike a context menu, swipe actions are reachable from VoiceOver's
+  actions rotor.
 
-### 7.4 Task editor
+### 7.4 Where a task lands when its status changes
+
+A status change always puts the task at the **top** of the section it arrives in, whichever of the
+three routes was used. The reason is visibility: a task dropped into the bottom of a fifty-item
+backlog has effectively vanished. Only an explicit drag within a section sets a position.
+
+New tasks are the exception and append to the bottom, because creating several in a row is
+building a queue, and each new one belongs after the last.
+
+While a row is held over a section, that section's rows tint to show where it will land.
+Dropping a row back on its own section does nothing; reordering is edit mode's job.
+
+### 7.5 Task editor
 
 Presented as a sheet. One short task, an obvious way out. `modality.md`.
 
@@ -254,7 +270,7 @@ The selected segment takes its stage colour, so choosing a status previews where
 Placeholder text describes the input rather than scolding for it — `writing.md › Best practices`:
 *"use hint or placeholder text so people know how to format the information."*
 
-### 7.5 Empty — and first launch
+### 7.6 Empty — and first launch
 
 One screen covers both. There is **no loading state**: an empty database renders instantly as an
 empty board.
@@ -285,7 +301,7 @@ the server would briefly claim "No tasks yet", which is false.
 screen; Reminders solves it the same way. The badge takes the To Do tint — the stage a new task
 actually lands in. Structure encoding information, not a decorative illustration.
 
-### 7.6 Reconnected, draining the queue
+### 7.7 Reconnected, draining the queue
 
 Connectivity returned and the engine started replaying on its own. Rails are mid-transition: some
 rows still in flight, others landed and gone solid. Capsule reads `↻ Syncing…`.
@@ -293,7 +309,7 @@ rows still in flight, others landed and gone solid. Capsule reads `↻ Syncing�
 **Nobody pressed anything.** This is the whole point of the offline queue, and the user's only job
 is to notice it finished.
 
-### 7.7 Dark appearance
+### 7.8 Dark appearance
 
 Same structures, semantic colours only — no hard-coded hex, no in-app appearance toggle.
 `dark-mode.md`. Each hue is re-picked for a dark ground rather than inverted.
@@ -352,7 +368,7 @@ Non-negotiable for the build, all from `accessibility.md › Vision` and `› Mo
 | Material FAB | The floating circle is right for iOS 26; the elevation shadow, ripple and Material glyph are not |
 | A second tinted button | One prominent action per view |
 | Custom font | SF with a rounded design keeps Dynamic Type and optical sizing free |
-| Horizontal Kanban | Cross-column drag is hours of SwiftUI the brief doesn't ask for |
+| Horizontal Kanban | A sectioned list is the native idiom and keeps Dynamic Type honest; dragging between sections works without it |
 | Custom visual identity beyond the palette | The rubric is architecture; a bespoke design language costs hours and looks less native |
 
 ---
