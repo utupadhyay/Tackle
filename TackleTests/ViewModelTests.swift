@@ -285,3 +285,118 @@ struct StatusCapsuleTests {
         #expect(pushing.capsuleGlyph == "arrow.trianglehead.2.clockwise")
     }
 }
+
+@Suite("Search")
+@MainActor
+struct SearchTests {
+
+    /// One task per stage, so a query has to be able to reach across all three.
+    private func board() async -> BoardViewModel {
+        let tasks = [
+            TaskItem(title: "Write the spec", details: "before Friday", status: .todo, sortIndex: 1024),
+            TaskItem(title: "Build login", details: "OAuth and the keychain", status: .inProgress, sortIndex: 1024),
+            TaskItem(title: "Review the PR", details: "", status: .done, sortIndex: 1024),
+        ]
+        let viewModel = BoardViewModel(
+            repository: FakeRepository(seed: tasks),
+            router: Router(),
+            status: SyncStatus()
+        )
+        await viewModel.observe()
+        return viewModel
+    }
+
+    private func titles(_ viewModel: BoardViewModel) -> [String] {
+        TaskStatus.allCases.flatMap { viewModel.tasks(in: $0) }.map(\.title)
+    }
+
+    @Test("A query matches the title, whatever its case")
+    func matchesTitle() async {
+        let viewModel = await board()
+
+        viewModel.searchText = "LOGIN"
+
+        #expect(titles(viewModel) == ["Build login"])
+    }
+
+    @Test("A query matches the description too")
+    func matchesDetails() async {
+        let viewModel = await board()
+
+        viewModel.searchText = "keychain"
+
+        #expect(titles(viewModel) == ["Build login"])
+    }
+
+    @Test("A query matching nothing empties the board and reports no results")
+    func noMatches() async {
+        let viewModel = await board()
+
+        viewModel.searchText = "deployment"
+
+        #expect(titles(viewModel).isEmpty)
+        #expect(!viewModel.hasResults)
+        // The board still holds tasks, which is what separates this from an empty board.
+        #expect(!viewModel.isEmpty)
+    }
+
+    @Test("A partial word matches")
+    func matchesPartially() async {
+        let viewModel = await board()
+
+        viewModel.searchText = "logi"
+
+        #expect(titles(viewModel) == ["Build login"])
+    }
+
+    @Test("A query spanning stages keeps one row from each")
+    func matchesAcrossStages() async {
+        let viewModel = await board()
+
+        // Present in two titles and in one description.
+        viewModel.searchText = "the"
+
+        #expect(titles(viewModel) == ["Write the spec", "Build login", "Review the PR"])
+    }
+
+    @Test("No query shows everything")
+    func emptyQueryShowsEverything() async {
+        let viewModel = await board()
+
+        #expect(titles(viewModel).count == 3)
+        #expect(!viewModel.isSearching)
+        #expect(viewModel.hasResults)
+    }
+
+    /// Typing a space between two words must not blank the board mid-phrase.
+    @Test("Whitespace alone is not a search")
+    func whitespaceIsNotASearch() async {
+        let viewModel = await board()
+
+        viewModel.searchText = "   \n\t "
+
+        #expect(titles(viewModel).count == 3)
+        #expect(!viewModel.isSearching)
+    }
+
+    @Test("Searching is what suspends reordering")
+    func searchingSuspendsReordering() async {
+        let viewModel = await board()
+        #expect(!viewModel.isSearching)
+
+        viewModel.searchText = "login"
+
+        #expect(viewModel.isSearching)
+    }
+
+    @Test("Headings stay, and their counts follow the filter")
+    func countsFollowTheFilter() async {
+        let viewModel = await board()
+
+        viewModel.searchText = "login"
+
+        #expect(viewModel.tasks(in: .todo).isEmpty)
+        #expect(viewModel.tasks(in: .inProgress).count == 1)
+        #expect(viewModel.tasks(in: .done).isEmpty)
+    }
+}

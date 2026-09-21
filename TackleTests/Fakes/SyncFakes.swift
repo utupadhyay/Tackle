@@ -18,6 +18,7 @@ final class FakeRemote: RemoteStoreProtocol, @unchecked Sendable {
         var pushed: [TaskItem] = []
         var failure: (any Error)?
         var continuation: AsyncStream<[TaskItem]>.Continuation?
+        var buffered: [[TaskItem]] = []
     }
 
     private let state = Mutex(State())
@@ -45,13 +46,26 @@ final class FakeRemote: RemoteStoreProtocol, @unchecked Sendable {
 
     func remoteChanges() -> AsyncStream<[TaskItem]> {
         AsyncStream { continuation in
-            state.withLock { $0.continuation = continuation }
+            let pending = state.withLock { state -> [[TaskItem]] in
+                state.continuation = continuation
+                defer { state.buffered = [] }
+                return state.buffered
+            }
+            for snapshot in pending { continuation.yield(snapshot) }
         }
     }
 
     /// Plays the part of a Firestore snapshot arriving.
+    ///
+    /// `SyncService.start()` subscribes from inside a `Task`, so it returns before the stream
+    /// exists. Anything emitted in that window is held and delivered on subscribe, otherwise
+    /// a test racing `start()` silently loses its snapshot.
     func emit(_ tasks: [TaskItem]) {
-        state.withLock { $0.continuation }?.yield(tasks)
+        let continuation = state.withLock { state -> AsyncStream<[TaskItem]>.Continuation? in
+            if state.continuation == nil { state.buffered.append(tasks) }
+            return state.continuation
+        }
+        continuation?.yield(tasks)
     }
 }
 

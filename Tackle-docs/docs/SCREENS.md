@@ -243,6 +243,11 @@ designed, not degraded.**
   offer a grabber they can't honour.
 - **Swipe actions:** `Move` (tint) and `Delete` (danger). The only two places those colours appear
   as fills.
+- **Search suspends reordering.** A drop is measured against the rows either side of it, so with
+  rows filtered out the resulting index ignores anything hidden between the two visible
+  neighbours. The gesture is withdrawn while a query is active; swipe, tap and the editor all
+  still work. Search sits under the large title rather than in the bottom bar iOS 26 defaults
+  to, because the bottom edge already carries the add button and the status capsule.
 - **No context menu.** Long press belongs to the drag. `Move` and `Delete` are both on the swipes,
   so nothing is lost — and unlike a context menu, swipe actions are reachable from VoiceOver's
   actions rotor.

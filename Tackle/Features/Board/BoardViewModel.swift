@@ -23,6 +23,7 @@ enum BoardRow: Identifiable {
 @Observable
 final class BoardViewModel {
     private(set) var tasks: [TaskItem] = []
+    var searchText = ""
     var pendingDeletion: TaskItem?
     var taskBeingMoved: TaskItem?
     var saveFailed = false
@@ -64,8 +65,29 @@ final class BoardViewModel {
         status.isPushing ? "arrow.trianglehead.2.clockwise" : "clock"
     }
 
+    // MARK: - Search
+
+    /// Whitespace alone is not a search. Trimming here means the board doesn't empty itself
+    /// the moment a space is typed between two words.
+    private var query: String {
+        searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var isSearching: Bool { !query.isEmpty }
+
+    var hasResults: Bool { tasks.contains(where: matches) }
+
+    private func matches(_ task: TaskItem) -> Bool {
+        let query = query
+        guard !query.isEmpty else { return true }
+        return task.title.localizedCaseInsensitiveContains(query)
+            || task.details.localizedCaseInsensitiveContains(query)
+    }
+
+    // MARK: - Rows
+
     func tasks(in status: TaskStatus) -> [TaskItem] {
-        tasks.filter { $0.status == status }
+        tasks.filter { $0.status == status && matches($0) }
     }
 
     /// Every stage heading followed by its tasks, as one flat list.

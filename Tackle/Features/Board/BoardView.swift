@@ -23,6 +23,13 @@ struct BoardView: View {
         NavigationStack(path: $router.path) {
             board
                 .navigationTitle("Tasks")
+                // Under the title, not in the bottom bar it defaults to: the bottom edge
+                // already carries the add button and the status capsule.
+                .searchable(
+                    text: $viewModel.searchText,
+                    placement: .navigationBarDrawer(displayMode: .always),
+                    prompt: "Search tasks"
+                )
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) { EditButton() }
                 }
@@ -66,6 +73,10 @@ struct BoardView: View {
     private var board: some View {
         if viewModel.isEmpty {
             emptyState
+        } else if !viewModel.hasResults {
+            // Distinct from an empty board: there is work here, just none matching.
+            ContentUnavailableView.search(text: viewModel.searchText)
+                .background(Theme.canvas)
         } else {
             BoardList(viewModel: viewModel)
         }
@@ -194,6 +205,9 @@ private struct BoardList: View {
             )
             .listRowSeparator(.hidden)
             .listRowInsets(rowInsets)
+            // A filtered list hides the neighbours a drop is measured against, so a move made
+            // during a search would resolve to a position that is wrong once it clears.
+            .moveDisabled(viewModel.isSearching)
             .onTapGesture { viewModel.edit(task) }
             .swipeActions(edge: .trailing) {
                 Button("Delete") { viewModel.pendingDeletion = task }
