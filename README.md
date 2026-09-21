@@ -5,6 +5,9 @@ without a network, and changes sync to Firebase when connectivity returns.
 
 Built for the *Offline-First Task Board* assignment.
 
+**Full dark mode. Portrait and landscape, iPhone and iPad. 78 tests, 97.7% of the business logic
+covered.**
+
 ---
 
 ## Requirements
@@ -12,7 +15,7 @@ Built for the *Offline-First Task Board* assignment.
 | | |
 |---|---|
 | **Xcode** | 16 or later (tests use Swift Testing) |
-| **iOS** | 18.0+ (`Synchronization.Mutex`) |
+| **iOS** | 18.0+  |
 | **Dependencies** | Firebase iOS SDK — `FirebaseFirestore` and `FirebaseAuth` only |
 | **Configuration** | None. `GoogleService-Info.plist` is committed; anonymous auth signs in silently |
 
@@ -37,9 +40,9 @@ them settle.
 - Local persistence across close, relaunch and connectivity loss
 - Syncs with Firebase Firestore — outbound push queue, inbound real-time listener
 - Per-task indication of whether a change has synced
-- Light and dark appearance, each with its own palette rather than one set of colours inverted
-- Portrait and landscape, on iPhone and iPad — the board is a single adaptive list with no fixed
-  widths, so it reflows rather than being letterboxed
+- **Light and dark appearance**, each with its own palette rather than one set of colours inverted
+- **Portrait and landscape, on iPhone and iPad** — the board is a single adaptive list with no
+  fixed widths, so it reflows rather than being letterboxed
 
 ---
 
@@ -98,6 +101,17 @@ reverts to the old arrangement and re-animates when the stream catches up, on ev
 The view model resolves the same neighbours and the same sort index the repository will, so the
 stream's answer agrees with what is already on screen and nothing moves twice.
 
+**Dark mode is a second palette, not the first one inverted.** Every colour is declared as a
+light/dark pair resolved through `UITraitCollection`, so the app switches with the system rather
+than being tinted at the edges. Inverting a light palette is what produces dark screens with
+grey-on-grey secondary text and stage colours that have lost their distinctness, so the dark
+values are re-picked against a dark ground and every text colour clears 4.5:1 on both. They live
+in one `Theme` enum, which is also what stops a stray `.gray` reaching a view.
+
+**Landscape falls out of the layout rather than being handled.** The board is a single adaptive
+`List` with no fixed widths and no hard-coded geometry, so rotating it reflows the rows instead
+of letterboxing them, and the same code covers iPad. Nothing in the app reads the orientation.
+
 **Sync state is derived, not stored.** A task is waiting if the outbox references it. Storing the
 flag invites a real bug: the engine marks a task syncing, awaits the network, the user edits during
 that window, the write succeeds, and the app marks a task synced that carries an unsent edit.
@@ -129,10 +143,11 @@ Race conditions and their mitigations are tabulated in [`ARCHITECTURE.md §7`](A
 
 ## Testing
 
-Swift Testing — 24 tests in four suites, run with **⌘U**.
+**Business logic: 97.7% covered. The whole app including every view: 82.4%.**
 
-Coverage is aimed at the positioning logic, because that is where this design can actually be
-wrong and where being wrong is silent rather than loud.
+Swift Testing — 78 tests in ten suites, run with **⌘U**. No UI tests: everything here is logic
+that can be wrong without anyone noticing, which is not true of a button that fails to appear.
+The views are the whole of the difference between the two figures.
 
 | Suite | What it pins down |
 |---|---|
@@ -140,14 +155,27 @@ wrong and where being wrong is silent rather than loud.
 | `Reordering` | The off-by-one in `onMove`, which numbers the drop against the list that still contains the row |
 | `Dragging across stages` | Translating a flat drop index back into a stage and a pair of neighbours |
 | `Status changes` | The top-landing rule, including empty sections, soft-deleted rows and no-op changes |
+| `Core Data store` | Outbox coalescing, soft delete, `isSynced`, and the newer-wins merge rule |
+| `Sync service` | The push loop, a failed push, an edit arriving mid-push, and two passes at once |
+| `Task repository` | New tasks appending, delete meaning soft delete, and what a drag resolves to |
+| `Task editor` | What counts as saveable, trimming, and create versus update |
+| `Board actions` | Deletion, the Move destinations, and a failed write surfacing as an alert |
+| `Status capsule` | The four things the capsule can say, including that synced says nothing |
 
-Everything runs against in-memory fakes of the store and repository protocols, so no simulator
-state and no Firebase project is involved.
+The store, repository and sync suites run against a real Core Data stack on an in-memory store,
+because the outbox rules *are* the behaviour and a fake of them would only test the fake. The
+server and the network are fakes, so no Firebase project is involved and no simulator state
+carries between runs.
 
-**The sync layer has no automated tests yet.** The push loop, the merge rule and the behaviour of
-two concurrent passes were verified by hand against a real Firestore project — airplane mode,
-force-quit mid-push, reinstall, and two clients on one board — rather than in code.
-`FirestoreStore` is thin mapping code and is checked the same way.
+The 97.7% covers the models, the store, the repository, the sync engine and the view models, and
+it comes with one caveat worth stating: tests run inside a host app, so launching the app marks
+lines executed that nothing asserts. Running a single trivial suite gives that baseline, and the
+figure above was taken net of it rather than read straight off the report.
+
+**Three things are still verified by hand.** `FirestoreStore` and `FirebaseBootstrap` are the
+Firebase edge, and `NetworkMonitor` wraps `NWPathMonitor`; all three were checked against a real
+project — airplane mode, force-quit mid-push, reinstall, and two clients on one board. Counting
+them as untested, coverage across all non-UI code is 78%.
 
 ---
 
@@ -164,8 +192,9 @@ force-quit mid-push, reinstall, and two clients on one board — rather than in 
   request and then read, overwrite or delete any task, without running the app. The rules stop
   unauthenticated scrapers and nothing more. That is an accepted consequence of a shared board
   with no accounts; a real deployment would need per-user scoping, App Check, or both.
-- **The sync layer has no automated tests**, including `FirestoreStore`. It is verified by hand
-  against a real project.
+- **The Firebase edge has no automated tests.** `FirestoreStore`, `FirebaseBootstrap` and
+  `NetworkMonitor` are verified by hand against a real project. The sync logic above them is
+  covered.
 
 ---
 
@@ -178,7 +207,8 @@ force-quit mid-push, reinstall, and two clients on one board — rather than in 
 4. **Folders**, so tasks can be grouped by project rather than living in one flat board.
 5. **Background sync** via `BGTaskScheduler`, so a queued change can drain without the app being
    opened.
-6. Automated tests for the sync layer, which is currently verified by hand.
+6. Tests for the Firebase edge itself — `FirestoreStore`'s mapping and `NetworkMonitor` — which
+   need either an emulator or a seam below `RemoteStoreProtocol`.
 7. Field-level conflict resolution rather than last-write-wins, and sort-index renormalisation.
 
 ---
