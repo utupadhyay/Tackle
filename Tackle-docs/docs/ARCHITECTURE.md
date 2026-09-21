@@ -2,7 +2,7 @@
 
 Offline-first iOS task board. SwiftUI + Core Data + Firebase Firestore. iOS 17+.
 
-Companion docs: [`FIREBASE.md`](FIREBASE.md) · [`SCREENS.md`](SCREENS.md) · [`BUILD-PLAN.md`](BUILD-PLAN.md)
+Companion docs: [`FIREBASE.md`](FIREBASE.md) · [`SCREENS.md`](SCREENS.md)
 
 ---
 
@@ -310,12 +310,15 @@ Tackle/
     Tackle.xcdatamodeld         CDTask + CDPendingPush (from the Xcode template)
     CoreDataStack.swift         container + single writer context
     CoreDataStore.swift
+    ManagedObjects.swift        hand-written CDTask + CDPendingPush subclasses
+    TaskRepository.swift
   Remote/
     FirestoreStore.swift
     FirebaseBootstrap.swift     configure + anonymous sign-in
   Sync/
     SyncService.swift
     NetworkMonitor.swift
+    SyncStatus.swift            what the status capsule reads
   Features/
     Board/       BoardView, BoardViewModel, TaskRow, StatusPill
     Editor/      TaskEditorView, TaskEditorViewModel
@@ -323,13 +326,17 @@ Tackle/
     Theme.swift                 colours from SCREENS.md §4
 TackleTests/
   Fakes/
-    FakeRemoteStore.swift, FakeNetworkMonitor.swift   (Part 3)
-  TackleTests.swift             domain + repository + sync suites
-TackleUITests/                  template target, unused by this plan — left untouched
+    SyncFakes.swift             fake remote + network monitor, in-memory store helper
+    FakeRepository.swift        what the view models see instead of Core Data
+  TackleTests.swift             sort index, reordering, dragging, status changes
+  CoreDataStoreTests.swift      outbox, soft delete, merge rule
+  SyncServiceTests.swift        push loop, failure, reentrancy, merge gate
+  TaskRepositoryTests.swift     create, delete, move
+  ViewModelTests.swift          editor, board actions, status capsule
+TackleUITests/                  template target, unused — left untouched
 ```
 
-Everything above `Tackle/Assets.xcassets` and the two test targets already exists from the Xcode
-template; `PART1.md §0` is the step that turns the template layout into this one.
+Everything above `Tackle/Assets.xcassets` and the two test targets came from the Xcode template.
 
 ---
 

@@ -6,7 +6,7 @@ Every design decision below is grounded in Apple's Human Interface Guidelines an
 `file.md › Heading`, referring to the HIG pages at
 <https://developer.apple.com/design/human-interface-guidelines>.
 
-Companion documents: [`ARCHITECTURE.md`](ARCHITECTURE.md) · [`FIREBASE.md`](FIREBASE.md) · [`BUILD-PLAN.md`](BUILD-PLAN.md).
+Companion documents: [`ARCHITECTURE.md`](ARCHITECTURE.md) · [`FIREBASE.md`](FIREBASE.md).
 
 ---
 
@@ -124,6 +124,13 @@ difference between a palette that was chosen and one that was inherited.
 SF throughout, with `.fontDesign(.rounded)` on the large title and section headers. Rounded reads
 warmer without leaving the system, so Dynamic Type, optical sizing and every accessibility size
 still come free. Brand lives in the colour and the one moment; navigation and controls stay system.
+
+> The large title is the exception, and it stays system. A navigation bar is UIKit and draws its
+> own label, so `.fontDesign(.rounded)` never reaches it; going through
+> `UINavigationBarAppearance.largeTitleTextAttributes` was tried and `NavigationStack` ignores it
+> too. The remaining route is to drop the native large title and rebuild it as a list row, which
+> costs the collapse-on-scroll behaviour — a worse trade than an un-rounded title, and against
+> the "navigation stays system" line above. The section headers carry the rounded design.
 
 Exactly one animation: the rail filling and the clock glyph cross-fading out when a row syncs.
 Brief, purposeful, on an event that happens rarely — the bar `motion.md` sets.

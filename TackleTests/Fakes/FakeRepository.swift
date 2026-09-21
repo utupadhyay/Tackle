@@ -24,6 +24,7 @@ final class FakeRepository: TaskRepositoryProtocol, @unchecked Sendable {
         var created: Creation?
         var updated: TaskItem?
         var deleted: UUID?
+        var syncCount = 0
         var refuses = false
     }
 
@@ -39,6 +40,7 @@ final class FakeRepository: TaskRepositoryProtocol, @unchecked Sendable {
     var created: Creation? { state.withLock { $0.created } }
     var updated: TaskItem? { state.withLock { $0.updated } }
     var deleted: UUID? { state.withLock { $0.deleted } }
+    var syncCount: Int { state.withLock { $0.syncCount } }
 
     private func failIfRefusing() throws {
         if state.withLock({ $0.refuses }) { throw Refused() }
@@ -73,5 +75,7 @@ final class FakeRepository: TaskRepositoryProtocol, @unchecked Sendable {
     func move(_ id: UUID, to status: TaskStatus, above: UUID?, below: UUID?) async throws {
         try failIfRefusing()
     }
-    func sync() async {}
+    func sync() async {
+        state.withLock { $0.syncCount += 1 }
+    }
 }

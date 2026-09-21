@@ -10,6 +10,7 @@ import Testing
 @testable import Tackle
 
 @Suite("Task editor")
+@MainActor
 struct TaskEditorTests {
 
     private func editor(for task: TaskItem? = nil) -> (TaskEditorViewModel, FakeRepository) {
@@ -177,6 +178,16 @@ struct BoardActionTests {
         viewModel.move(item, to: .done)
 
         #expect(await eventually { viewModel.saveFailed })
+    }
+
+    /// The only manual sync gesture in the app, since the retry button was deliberately cut.
+    @Test("Pull to refresh asks the repository to sync")
+    func refreshSyncs() async {
+        let (viewModel, repository, _) = await board(tasks: [task("a")])
+
+        await viewModel.refresh()
+
+        #expect(repository.syncCount == 1)
     }
 
     @Test("Opening an editor presents it")

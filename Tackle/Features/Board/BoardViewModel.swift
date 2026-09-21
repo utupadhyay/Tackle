@@ -90,6 +90,12 @@ final class BoardViewModel {
         }
     }
 
+    /// Pull to refresh — the only manual sync gesture, and deliberately the only one. The engine
+    /// retries on connectivity and on every write, so this exists to be reached for, not needed.
+    func refresh() async {
+        await repository.sync()
+    }
+
     // MARK: - Navigation
 
     func newTask() { router.present(.editor(nil)) }

@@ -56,8 +56,9 @@ SwiftUI Views → TaskRepository → ┬→ Core Data (tasks + outbox)  ← sour
 
 **Core Data is the source of truth. The UI reads only from it. Firebase never blocks the screen.**
 
-Three layers, three protocols. Full detail in [`ARCHITECTURE.md`](ARCHITECTURE.md), Firebase
-specifics in [`FIREBASE.md`](FIREBASE.md).
+Three layers, three protocols. Full detail in
+[`ARCHITECTURE.md`](Tackle-docs/docs/ARCHITECTURE.md), Firebase specifics in
+[`FIREBASE.md`](Tackle-docs/docs/FIREBASE.md).
 
 ---
 
@@ -127,8 +128,10 @@ create.
 **Push before pull.** The fetch runs only after the outbox drains, and skips any task with a
 pending push. Pulling first lets stale server data overwrite queued local edits.
 
-**Firebase is confined to one file.** `FirestoreStore` is the only type that imports it; everything
-above uses `RemoteStoreProtocol`, so tests run against a fake with no emulator.
+**Firebase is confined to the `Remote/` folder.** Two files import it — `FirestoreStore`, which
+is the only conformance to `RemoteStoreProtocol`, and `FirebaseBootstrap`, which configures the
+SDK and signs in. Nothing above that boundary knows Firebase exists, so the sync engine and
+everything over it test against a fake with no emulator and no credentials.
 
 **One shared board, and anonymous auth exists only to close the door.** The brief asks for no
 user accounts, so every install works against the same top-level `tasks` collection — which is
@@ -137,7 +140,8 @@ silent anonymous sign-in carries no data and appears nowhere in the document pat
 is to let the rules demand `request.auth != null` instead of leaving the database world-readable.
 The trade-off is explicit: authenticated-only, not per-user isolation.
 
-Race conditions and their mitigations are tabulated in [`ARCHITECTURE.md §7`](ARCHITECTURE.md).
+Race conditions and their mitigations are tabulated in
+[`ARCHITECTURE.md §7`](Tackle-docs/docs/ARCHITECTURE.md).
 
 ---
 
@@ -223,7 +227,7 @@ them as untested, coverage across all non-UI code is 78%.
   other two land the task on top.
 - `GoogleService-Info.plist` belongs in the repo, since the brief requires the project to build
   without undisclosed configuration. The Firestore rules require an authenticated caller and are
-  included in [`FIREBASE.md §5`](FIREBASE.md); their limits are spelled out under Known
+  included in [`FIREBASE.md §5`](Tackle-docs/docs/FIREBASE.md); their limits are spelled out under Known
   limitations, and the Firebase project behind them is disposable.
 
 ---
@@ -232,7 +236,6 @@ them as untested, coverage across all non-UI code is 78%.
 
 | | |
 |---|---|
-| [`ARCHITECTURE.md`](ARCHITECTURE.md) | Layers, models, protocols, sync pass, race conditions |
-| [`FIREBASE.md`](FIREBASE.md) | Console setup, data model, security rules, offline behaviour |
-| [`SCREENS.md`](SCREENS.md) | UI spec, palette with contrast ratios, every user-facing string |
-| [`BUILD-PLAN.md`](BUILD-PLAN.md) | The three build parts |
+| [`ARCHITECTURE.md`](Tackle-docs/docs/ARCHITECTURE.md) | Layers, models, protocols, sync pass, race conditions |
+| [`FIREBASE.md`](Tackle-docs/docs/FIREBASE.md) | Console setup, data model, security rules, offline behaviour |
+| [`SCREENS.md`](Tackle-docs/docs/SCREENS.md) | UI spec, palette with contrast ratios, every user-facing string |

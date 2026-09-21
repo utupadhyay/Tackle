@@ -163,6 +163,7 @@ private struct BoardList: View {
         .listStyle(.plain)
         .scrollContentBackground(.hidden)
         .background(Theme.canvas)
+        .refreshable { await viewModel.refresh() }
     }
 
     private func header(for status: TaskStatus) -> some View {
