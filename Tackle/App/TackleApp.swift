@@ -14,6 +14,7 @@ struct TackleApp: App {
     var body: some Scene {
         WindowGroup {
             BoardView(viewModel: container.makeBoardViewModel(), router: container.router)
+                .task { await container.bootstrapFirebase() }
         }
     }
 }

@@ -16,13 +16,36 @@ final class BoardViewModel {
 
     private let repository: TaskRepositoryProtocol
     private let router: Router
+    private let status: SyncStatus
 
-    init(repository: TaskRepositoryProtocol, router: Router) {
+    init(repository: TaskRepositoryProtocol, router: Router, status: SyncStatus) {
         self.repository = repository
         self.router = router
+        self.status = status
     }
 
     var isEmpty: Bool { tasks.isEmpty }
+
+    // MARK: - Status capsule
+
+    private var waitingCount: Int {
+        tasks.count { !$0.isSynced }
+    }
+
+    /// Nil means no capsule at all. Silence is the synced state.
+    var capsuleText: String? {
+        let waiting = waitingCount
+        if waiting > 0 {
+            return status.isOnline ? "Syncing…" : "Offline · \(waiting) waiting"
+        }
+        // The one thing the app genuinely doesn't know yet: whether the server has anything.
+        guard status.isOnline, !status.hasLoadedRemote else { return nil }
+        return "Checking for tasks…"
+    }
+
+    var capsuleGlyph: String {
+        waitingCount > 0 && !status.isOnline ? "clock" : "arrow.trianglehead.2.clockwise"
+    }
 
     func tasks(in status: TaskStatus) -> [TaskItem] {
         tasks.filter { $0.status == status }

@@ -12,19 +12,33 @@ actor SyncService {
     private let local: LocalStoreProtocol
     private let remote: RemoteStoreProtocol
     private let monitor: NetworkMonitoring
+    private let status: SyncStatus?
 
     private var isPushing = false
     private var needsAnotherPass = false
     private var listenerTask: Task<Void, Never>?
     private var monitorTask: Task<Void, Never>?
 
-    init(local: LocalStoreProtocol, remote: RemoteStoreProtocol, monitor: NetworkMonitoring) {
+    init(
+        local: LocalStoreProtocol,
+        remote: RemoteStoreProtocol,
+        monitor: NetworkMonitoring,
+        status: SyncStatus? = nil
+    ) {
         self.local = local
         self.remote = remote
         self.monitor = monitor
+        self.status = status
     }
 
-    func start() {
+    func start() async {
+        let isOnline = await monitor.isOnline
+        await report { status in
+            status.isOnline = isOnline
+            // From here there is a server to hear from, and we haven't yet.
+            status.hasLoadedRemote = false
+        }
+
         listenerTask = Task { [weak self] in
             guard let self else { return }
             for await remoteTasks in self.remote.remoteChanges() {
@@ -33,8 +47,9 @@ actor SyncService {
         }
         monitorTask = Task { [weak self] in
             guard let self else { return }
-            for await online in self.monitor.changes where online {
-                await self.pushPending()
+            for await online in self.monitor.changes {
+                await self.report { $0.isOnline = online }
+                if online { await self.pushPending() }
             }
         }
         Task { await pushPending() }
@@ -56,7 +71,11 @@ actor SyncService {
             return
         }
         isPushing = true
-        defer { isPushing = false }
+        await report { $0.isPushing = true }
+        defer {
+            isPushing = false
+            Task { await report { $0.isPushing = false } }
+        }
 
         repeat {
             needsAnotherPass = false
@@ -89,9 +108,16 @@ actor SyncService {
     /// and it is also why our own echoed write is harmless: once the outbox row clears, the
     /// echo carries exactly the `updatedAt` we wrote, so it fails the `>` test in `mergeRemote`.
     private func merge(_ remoteTasks: [TaskItem]) async {
+        await report { $0.hasLoadedRemote = true }
+
         guard let pendingIds = try? await local.pendingTaskIds() else { return }
         let mergeable = remoteTasks.filter { !pendingIds.contains($0.id) }
         guard !mergeable.isEmpty else { return }
         try? await local.mergeRemote(mergeable)
+    }
+
+    private func report(_ change: @escaping @MainActor (SyncStatus) -> Void) async {
+        guard let status else { return }
+        await MainActor.run { change(status) }
     }
 }
