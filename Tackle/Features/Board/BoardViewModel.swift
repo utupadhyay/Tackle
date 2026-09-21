@@ -33,10 +33,14 @@ final class BoardViewModel {
     }
 
     /// Nil means no capsule at all. Silence is the synced state.
+    ///
+    /// Queued work only reads as "Syncing…" while a push is actually in flight — anything else
+    /// queued and not moving is reported as offline, which stays true whether the network is
+    /// down or the server is simply unreachable.
     var capsuleText: String? {
         let waiting = waitingCount
         if waiting > 0 {
-            return status.isOnline ? "Syncing…" : "Offline · \(waiting) waiting"
+            return status.isPushing ? "Syncing…" : "Offline · \(waiting) waiting"
         }
         // The one thing the app genuinely doesn't know yet: whether the server has anything.
         guard status.isOnline, !status.hasLoadedRemote else { return nil }
@@ -44,7 +48,7 @@ final class BoardViewModel {
     }
 
     var capsuleGlyph: String {
-        waitingCount > 0 && !status.isOnline ? "clock" : "arrow.trianglehead.2.clockwise"
+        status.isPushing ? "arrow.trianglehead.2.clockwise" : "clock"
     }
 
     func tasks(in status: TaskStatus) -> [TaskItem] {

@@ -90,6 +90,13 @@ pending push. Pulling first lets stale server data overwrite queued local edits.
 **Firebase is confined to one file.** `FirestoreStore` is the only type that imports it; everything
 above uses `RemoteStoreProtocol`, so tests run against a fake with no emulator.
 
+**One shared board, and anonymous auth exists only to close the door.** The brief asks for no
+user accounts, so every install works against the same top-level `tasks` collection — which is
+also what makes the real-time behaviour visible, since two simulators show the same board. The
+silent anonymous sign-in carries no data and appears nowhere in the document path; its only job
+is to let the rules demand `request.auth != null` instead of leaving the database world-readable.
+The trade-off is explicit: authenticated-only, not per-user isolation.
+
 Race conditions and their mitigations are tabulated in [`ARCHITECTURE.md §7`](ARCHITECTURE.md).
 
 ---
@@ -116,8 +123,13 @@ against a real project.
   roughly 50 splits between the same two rows. Renormalisation isn't implemented.
 - **Last-write-wins.** With a second device, the earlier edit is silently lost.
 - **Soft-deleted documents are never purged** from Firestore.
-- **Single anonymous user.** No sign-in UI, no account recovery; reinstalling gets a new uid and
-  therefore an empty board.
+- **One shared board, and "authenticated" does not mean "trusted".** Every install reads and
+  writes the same collection, so the rules can only require `request.auth != null` — they cannot
+  isolate one person's data from another's. Because anonymous sign-in is enabled and the API key
+  ships in the committed plist, anyone with this repository can mint a credential in a single
+  request and then read, overwrite or delete any task, without running the app. The rules stop
+  unauthenticated scrapers and nothing more. That is an accepted consequence of a shared board
+  with no accounts; a real deployment would need per-user scoping, App Check, or both.
 - **`FirestoreStore` has no automated tests.**
 
 ---
@@ -136,36 +148,14 @@ against a real project.
 
 - No specific backend was named in the brief, so I chose Firebase Firestore.
 - Task order is part of the synced model, not a local-only concern.
-- Single user; anonymous auth is enough, no account system implied.
+- No user accounts were asked for, so there is one shared board and anonymous auth is used purely
+  to keep the database from being open to anyone.
 - The board is a native sectioned list; moving between sections is an explicit action rather than a
   cross-column drag.
 - `GoogleService-Info.plist` belongs in the repo, since the brief requires the project to build
-  without undisclosed configuration. Security comes from the Firestore rules, which are scoped to
-  `users/{uid}` and included in [`FIREBASE.md §5`](FIREBASE.md).
-
----
-
-## Time spent
-
-<!-- FILL IN: approximate hours, split across design / implementation / tests -->
-
----
-
-## AI tools used
-
-<!-- VERIFY THIS MATCHES YOUR OWN ACCOUNT BEFORE SUBMITTING -->
-
-I used Claude throughout — for analysing the brief, designing the architecture, writing the UI
-specification against Apple's Human Interface Guidelines, and producing the implementation.
-
-The design decisions were mine, and several came from rejecting its first proposals. It initially
-specified a full-screen error when the remote fetch fails, a loading skeleton, and a per-row Retry
-button; I rejected all three as contradicting the offline-first requirement, which is why the app
-has none of them. I asked for the create action to sit within thumb reach, which produced the
-floating button. I also chose Firebase over the mock backend it proposed, which simplified the sync
-design considerably once we recognised that Firestore upserts make the outbox a plain list of IDs.
-
-I have reviewed the architecture and can explain any decision in it.
+  without undisclosed configuration. The Firestore rules require an authenticated caller and are
+  included in [`FIREBASE.md §5`](FIREBASE.md); their limits are spelled out under Known
+  limitations, and the Firebase project behind them is disposable.
 
 ---
 
@@ -177,6 +167,3 @@ I have reviewed the architecture and can explain any decision in it.
 | [`FIREBASE.md`](FIREBASE.md) | Console setup, data model, security rules, offline behaviour |
 | [`SCREENS.md`](SCREENS.md) | UI spec, palette with contrast ratios, every user-facing string |
 | [`BUILD-PLAN.md`](BUILD-PLAN.md) | The three build parts |
-| [`PART1.md`](PART1.md) | Part 1: entities, repository semantics, screens, checklist |
-| [`PART2.md`](PART2.md) | Part 2: Firebase wiring, the sync service, verification |
-| [`PART3.md`](PART3.md) | Part 3: the test suite and end-to-end runs |

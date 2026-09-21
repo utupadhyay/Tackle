@@ -32,16 +32,27 @@ final class AppContainer {
     func bootstrapFirebase() async {
         guard sync == nil else { return }
 
-        do {
-            try await FirebaseBootstrap.start()
-        } catch {
-            return
+        FirebaseBootstrap.configure()
+
+        let monitor = NetworkMonitor()
+
+        // The anonymous credential is the one part of startup that needs the network. On a
+        // first launch in airplane mode, giving up here would leave sync detached for the
+        // whole session and the outbox would sit there even after the network came back, so
+        // retry on each reconnect until it takes.
+        var connectivity = monitor.changes.makeAsyncIterator()
+        while (try? await FirebaseBootstrap.signIn()) == nil {
+            var reconnected = false
+            while !reconnected, let isOnline = await connectivity.next() {
+                reconnected = isOnline
+            }
+            guard reconnected else { return }
         }
 
         let service = SyncService(
             local: store,
             remote: FirestoreStore(),
-            monitor: NetworkMonitor(),
+            monitor: monitor,
             status: syncStatus
         )
         sync = service

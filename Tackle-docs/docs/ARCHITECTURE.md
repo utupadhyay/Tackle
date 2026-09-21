@@ -185,7 +185,7 @@ listener** that pushes to you.
 
 ### Inbound — real-time, not polling
 
-`FirestoreStore.remoteChanges()` wraps `addSnapshotListener` on `users/{uid}/tasks`. The first
+`FirestoreStore.remoteChanges()` wraps `addSnapshotListener` on the shared `tasks` collection. The first
 value is the full collection; after that Firestore delivers every change as it happens — including
 changes made from another device or typed directly into the Firebase console.
 

@@ -16,7 +16,10 @@ Read [`ARCHITECTURE.md §6–7`](ARCHITECTURE.md) first — this document is the
 3. Download **`GoogleService-Info.plist`** and drag it into the Xcode project root, target
    membership ticked.
 4. **Build → Firestore Database → Create database → Production mode**, pick a region near you.
-5. **Build → Authentication → Get started → Sign-in method → Anonymous → Enable.**
+   If you started in test mode, publish the rules in §5 before going any further.
+5. **Build → Authentication → Get started → Sign-in method → Anonymous → Enable.** Skipping this
+   fails with `CONFIGURATION_NOT_FOUND`, which the app swallows silently — writes simply queue
+   forever.
 
 > **Commit the plist.** The brief requires the project to build with no undisclosed configuration,
 > so the reviewer must have it. iOS Firebase config values are client identifiers, not secrets —
@@ -30,13 +33,17 @@ Read [`ARCHITECTURE.md §6–7`](ARCHITECTURE.md) first — this document is the
 
 ## 2. Bootstrap — and the one setting that matters
 
+Configuration and sign-in are deliberately separate calls, because only one of them needs the
+network:
+
 ```swift
 import FirebaseCore
 import FirebaseFirestore
 import FirebaseAuth
 
 enum FirebaseBootstrap {
-    static func start() async throws -> String {   // returns the uid
+    /// Touches no network, so it is safe on a first launch in airplane mode.
+    static func configure() {
         FirebaseApp.configure()
 
         // CRITICAL: Firestore ships with its own offline cache and write queue.
@@ -46,23 +53,37 @@ enum FirebaseBootstrap {
         let settings = Firestore.firestore().settings
         settings.cacheSettings = MemoryCacheSettings()
         Firestore.firestore().settings = settings
+    }
 
-        if let user = Auth.auth().currentUser { return user.uid }
-        return try await Auth.auth().signInAnonymously().user.uid
+    static func signIn() async throws {
+        if Auth.auth().currentUser != nil { return }
+        _ = try await Auth.auth().signInAnonymously()
     }
 }
 ```
 
-Anonymous sign-in is silent — no login screen, no user-visible step. The uid persists across
-launches in the keychain.
+Anonymous sign-in is silent — no login screen, no user-visible step. The credential persists in
+the keychain, so this reaches the network once per install and never again.
+
+**Retry sign-in on reconnect.** A very first launch in airplane mode has no cached credential, so
+`signIn()` throws. Giving up there is a real bug: sync would stay detached for the whole session
+and the outbox would sit untouched even after the network came back, until the user force-quit
+the app. The caller retries on each connectivity change and only wires up `SyncService` once
+sign-in succeeds.
 
 ---
 
 ## 3. Firestore data model
 
 ```
-users/{uid}/tasks/{taskId}
+tasks/{taskId}
 ```
+
+**One shared board.** There are no per-user boards: every install reads and writes the same
+top-level `tasks` collection, which is what makes the real-time behaviour demonstrable — two
+simulators side by side show the same tasks. The anonymous uid is never part of the path; it
+exists only so the rules in §5 can demand an authenticated caller rather than leaving the
+database open to the world.
 
 `taskId` is our client-generated `UUID().uuidString`. That is what makes every write idempotent.
 
@@ -90,11 +111,9 @@ eat an unsent local create.
 
 ```swift
 actor FirestoreStore: RemoteStoreProtocol {
-    private let db = Firestore.firestore()
-    private let uid: String
-
-    private var collection: CollectionReference {
-        db.collection("users").document(uid).collection("tasks")
+    /// One shared board: every install reads and writes the same collection.
+    private nonisolated var collection: CollectionReference {
+        Firestore.firestore().collection("tasks")
     }
 
     /// Create, update and delete are all this one call.
@@ -142,15 +161,32 @@ database gets found by scrapers within days.
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /users/{uid}/tasks/{taskId} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+    match /tasks/{taskId} {
+      allow read, write: if request.auth != null;
     }
   }
 }
 ```
 
-Each anonymous user can only touch their own subtree. Publish, and paste them into the README —
-"I scoped data per user and locked the rules" is a better answer than an open database.
+Because the board is shared, the rule cannot scope by uid — the boundary it enforces is
+"authenticated caller only".
+
+**Be honest about how weak that is.** Anonymous sign-in means anyone can obtain a credential with
+one unauthenticated request, and the API key needed to do it ships in the committed plist. In a
+public repository that means any reader can read, overwrite or delete every task without ever
+launching the app. The rule stops scrapers that don't authenticate; it does not protect the data.
+Say exactly that in the README rather than implying stronger isolation than exists, and treat the
+Firebase project as disposable.
+
+Verify it rather than trusting the console: an unauthenticated read should be refused.
+
+```sh
+curl -s -o /dev/null -w '%{http_code}\n' \
+  "https://firestore.googleapis.com/v1/projects/$PROJECT_ID/databases/(default)/documents/tasks"
+```
+
+`403` means the rules are live. `200` means you are still on test-mode rules, which also expire
+on a timer and will silently break sync when they do.
 
 ---
 
@@ -166,6 +202,7 @@ listener stops delivering. That is the intended design: neither reaches the UI.
 | Connectivity returns | `NetworkMonitor` triggers the push loop; pushes land and rails go solid. The listener reconnects on its own and re-delivers anything it missed. |
 | App killed mid-push | The outbox row was never cleared, so it pushes again. The write is idempotent, so no duplicate. |
 | Edited during its own push | On success the row clears **only if `updatedAt` is unchanged**; otherwise it stays queued for the next pass. |
+| First ever launch offline | No cached credential, so sign-in fails and sync stays detached — but only until connectivity returns, when it retries and attaches (§2). |
 
 ---
 
