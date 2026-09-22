@@ -51,22 +51,6 @@ controls, not reskinned ones, and the app still runs on iOS 18
 
 ---
 
-## Architecture
-
-```
-SwiftUI Views → TaskRepository → ┬→ Core Data (tasks + outbox)  ← source of truth
-     ↕                                └→ SyncService ⇄ Firestore
-  Router                                   push loop + snapshot listener
-```
-
-**Core Data is the source of truth. The UI reads only from it. Firebase never blocks the screen.**
-
-Three layers, three protocols. Full detail in
-`[ARCHITECTURE.md](Tackle-docs/docs/ARCHITECTURE.md)`, Firebase specifics in
-`[FIREBASE.md](Tackle-docs/docs/FIREBASE.md)`.
-
----
-
 ## Technical decisions
 
 **Core Data is authoritative; Firestore is a sync target.** Taking "remain usable when
@@ -235,8 +219,7 @@ covered.
 4. **Folders**, so tasks can be grouped by project rather than living in one flat board.
 5. **Background sync** via `BGTaskScheduler`, so a queued change can drain without the app being
   opened.
-6. Tests for the Firebase edge itself — `FirestoreStore`'s mapping and `NetworkMonitor` — which
-  need either an emulator or a seam below `RemoteStoreProtocol`.
+6. Add file and image support also.
 
 ---
 
